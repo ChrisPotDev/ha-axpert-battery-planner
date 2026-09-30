@@ -10,19 +10,25 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    ATTR_BATTERY_LOAD,
+    ATTR_BATTERY_LOAD_TRIPPED,
+    ATTR_CHARGE_CURRENT,
     ATTR_DESIRED_CHARGER,
     ATTR_DESIRED_OUTPUT,
     ATTR_ERRORS,
+    ATTR_GRID_AVAILABLE,
     ATTR_GRID_CHARGE,
     ATTR_LAST_COMMAND,
     ATTR_LAST_COMMAND_TIME,
     ATTR_MAX_WRITES_PER_DAY,
     ATTR_NEXT_CHANGE,
+    ATTR_OVERRIDES,
     ATTR_PENDING_STATE,
     ATTR_SLOT_END,
     ATTR_SLOT_START,
     ATTR_SOC,
     ATTR_SOC_SOURCE,
+    ATTR_SOLAR_FORECAST,
     ATTR_STATE_SINCE,
     ATTR_TARGET_SOC,
     ATTR_WRITES_TODAY,
@@ -74,6 +80,7 @@ class ActiveSlotSensor(AxpertPlannerEntity, SensorEntity):
             ATTR_NEXT_CHANGE: data.next_change.isoformat() if data.next_change else None,
             ATTR_TARGET_SOC: data.target_soc,
             ATTR_GRID_CHARGE: data.grid_charge,
+            ATTR_CHARGE_CURRENT: data.charge_current,
         }
 
 
@@ -105,6 +112,11 @@ class PlanStatusSensor(AxpertPlannerEntity, SensorEntity):
             ATTR_DESIRED_CHARGER: data.desired_charger,
             ATTR_PENDING_STATE: data.pending_state.value if data.pending_state else None,
             ATTR_STATE_SINCE: data.state_since.isoformat() if data.state_since else None,
+            ATTR_OVERRIDES: list(data.overrides),
+            ATTR_GRID_AVAILABLE: data.grid_available,
+            ATTR_SOLAR_FORECAST: data.solar_forecast,
+            ATTR_BATTERY_LOAD: data.battery_load,
+            ATTR_BATTERY_LOAD_TRIPPED: data.battery_load_tripped,
             ATTR_LAST_COMMAND: data.last_command,
             ATTR_LAST_COMMAND_TIME: (
                 data.last_command_time.isoformat() if data.last_command_time else None

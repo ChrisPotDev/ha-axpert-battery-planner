@@ -34,6 +34,8 @@ cards:
         name: Target SOC
       - entity: switch.axpert_battery_planner_slot_1_grid_charge
         name: Grid charge
+      - entity: number.axpert_battery_planner_slot_1_charge_current
+        name: Charge current (0 = default)
       - type: section
         label: Slot 2
       - entity: switch.axpert_battery_planner_slot_2_enabled
@@ -44,6 +46,8 @@ cards:
         name: Target SOC
       - entity: switch.axpert_battery_planner_slot_2_grid_charge
         name: Grid charge
+      - entity: number.axpert_battery_planner_slot_2_charge_current
+        name: Charge current (0 = default)
       - type: section
         label: Slot 3
       - entity: switch.axpert_battery_planner_slot_3_enabled
@@ -54,6 +58,8 @@ cards:
         name: Target SOC
       - entity: switch.axpert_battery_planner_slot_3_grid_charge
         name: Grid charge
+      - entity: number.axpert_battery_planner_slot_3_charge_current
+        name: Charge current (0 = default)
       - type: section
         label: Slot 4
       - entity: switch.axpert_battery_planner_slot_4_enabled
@@ -64,6 +70,8 @@ cards:
         name: Target SOC
       - entity: switch.axpert_battery_planner_slot_4_grid_charge
         name: Grid charge
+      - entity: number.axpert_battery_planner_slot_4_charge_current
+        name: Charge current (0 = default)
       - type: section
         label: Slot 5
       - entity: switch.axpert_battery_planner_slot_5_enabled
@@ -74,6 +82,8 @@ cards:
         name: Target SOC
       - entity: switch.axpert_battery_planner_slot_5_grid_charge
         name: Grid charge
+      - entity: number.axpert_battery_planner_slot_5_charge_current
+        name: Charge current (0 = default)
       - type: section
         label: Slot 6
       - entity: switch.axpert_battery_planner_slot_6_enabled
@@ -84,6 +94,8 @@ cards:
         name: Target SOC
       - entity: switch.axpert_battery_planner_slot_6_grid_charge
         name: Grid charge
+      - entity: number.axpert_battery_planner_slot_6_charge_current
+        name: Charge current (0 = default)
   - type: entities
     title: Diagnostics
     entities:
@@ -104,6 +116,14 @@ cards:
         entity: sensor.axpert_battery_planner_plan_execution_status
         attribute: pending_state
         name: Pending (dwell)
+      - type: attribute
+        entity: sensor.axpert_battery_planner_plan_execution_status
+        attribute: overrides
+        name: Active overrides
+      - type: attribute
+        entity: sensor.axpert_battery_planner_plan_execution_status
+        attribute: grid_available
+        name: Grid available
       - type: attribute
         entity: sensor.axpert_battery_planner_active_plan_slot
         attribute: next_slot_change

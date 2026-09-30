@@ -11,7 +11,14 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    ATTR_FRIENDLY_NAME,
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import HomeAssistant, State, split_entity_id
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
@@ -20,29 +27,45 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     COMMAND_SPACING,
+    CONF_BATTERY_LOAD_ENTITY,
+    CONF_BATTERY_LOAD_RELEASE,
+    CONF_BATTERY_LOAD_RELEASE_DELAY,
+    CONF_BATTERY_LOAD_TRIP,
+    CONF_BATTERY_LOAD_TRIP_DELAY,
     CONF_CHARGE_CURRENT_ENTITY,
     CONF_CHARGE_HYSTERESIS,
     CONF_CHARGER_GRID_OPTION,
     CONF_CHARGER_NO_GRID_OPTION,
     CONF_CHARGER_PRIORITY_ENTITY,
     CONF_DEADBAND,
+    CONF_FORCE_HOLD_ENTITIES,
+    CONF_GRID_AVAILABLE_ENTITY,
     CONF_GRID_CHARGE_CURRENT,
+    CONF_GRID_MIN_VOLTAGE,
     CONF_MAX_WRITES_PER_DAY,
     CONF_MIN_DWELL_TIME,
     CONF_OUTPUT_DISCHARGE_OPTION,
     CONF_OUTPUT_HOLD_OPTION,
     CONF_OUTPUT_PRIORITY_ENTITY,
     CONF_SOC_ENTITY,
+    CONF_SOLAR_FORECAST_ENTITY,
+    CONF_SOLAR_FORECAST_THRESHOLD,
     CONF_UPDATE_INTERVAL,
     CONF_VOLTAGE_EMPTY,
     CONF_VOLTAGE_ENTITY,
     CONF_VOLTAGE_FULL,
+    DEFAULT_BATTERY_LOAD_RELEASE,
+    DEFAULT_BATTERY_LOAD_RELEASE_DELAY,
+    DEFAULT_BATTERY_LOAD_TRIP,
+    DEFAULT_BATTERY_LOAD_TRIP_DELAY,
     DEFAULT_CHARGE_HYSTERESIS,
     DEFAULT_DEADBAND,
     DEFAULT_GRID_CHARGE_CURRENT,
+    DEFAULT_GRID_MIN_VOLTAGE,
     DEFAULT_MAX_WRITES_PER_DAY,
     DEFAULT_MIN_DWELL_TIME,
     DEFAULT_SLOTS,
+    DEFAULT_SOLAR_FORECAST_THRESHOLD,
     DEFAULT_UPDATE_INTERVAL,
     DEFAULT_VOLTAGE_EMPTY,
     DEFAULT_VOLTAGE_FULL,
@@ -60,8 +83,10 @@ from .const import (
 from .planner import (
     OPERATING_STATES,
     ActiveSlot,
+    LoadGuard,
     PlanSlot,
     PlanStatus,
+    apply_hold_override,
     bypasses_dwell,
     clamp_soc,
     compute_state,
@@ -85,6 +110,7 @@ class PlannerData:
     active_slot: int | None
     target_soc: int | None
     grid_charge: bool | None
+    charge_current: float | None
     slot_start: time | None
     slot_end: time | None
     next_change: datetime | None
@@ -94,6 +120,11 @@ class PlannerData:
     desired_charger: str | None
     pending_state: PlanStatus | None
     state_since: datetime | None
+    overrides: tuple[str, ...]
+    grid_available: bool | None
+    solar_forecast: float | None
+    battery_load: float | None
+    battery_load_tripped: bool
     last_command: str | None
     last_command_time: datetime | None
     errors: tuple[str, ...]
@@ -159,6 +190,26 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
         self._state_since: datetime | None = None
         self._last_slot_index: int | None = None
         self._force_evaluation = True
+
+        # Override inputs, refreshed on every evaluation.
+        self._load_guard = LoadGuard(
+            trip_level=float(self.conf.get(CONF_BATTERY_LOAD_TRIP, DEFAULT_BATTERY_LOAD_TRIP)),
+            release_level=float(
+                self.conf.get(CONF_BATTERY_LOAD_RELEASE, DEFAULT_BATTERY_LOAD_RELEASE)
+            ),
+            trip_delay=float(
+                self.conf.get(CONF_BATTERY_LOAD_TRIP_DELAY, DEFAULT_BATTERY_LOAD_TRIP_DELAY)
+            ),
+            release_delay=float(
+                self.conf.get(
+                    CONF_BATTERY_LOAD_RELEASE_DELAY, DEFAULT_BATTERY_LOAD_RELEASE_DELAY
+                )
+            ),
+        )
+        self._overrides: tuple[str, ...] = ()
+        self._grid_available: bool | None = None
+        self._solar_forecast: float | None = None
+        self._battery_load: float | None = None
 
         # Write bookkeeping for rate limiting and confirmation tracking.
         self._last_write: dict[str, datetime] = {}
@@ -237,9 +288,12 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
         target_soc: float | None = None,
         grid_charge: bool | None = None,
         active: bool | None = None,
+        charge_current: float | None = None,
     ) -> None:
         """Change one or more fields of a slot and re-evaluate."""
         changes: dict[str, Any] = {}
+        if charge_current is not None:
+            changes["charge_current"] = max(0, int(round(charge_current)))
         if start_time is not None:
             changes["start_time"] = start_time.replace(microsecond=0, tzinfo=None)
         if target_soc is not None:
@@ -279,6 +333,7 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
         errors: list[str] = []
         active = resolve_active_slot(self.slots, now.time())
         soc, soc_source = self._read_soc()
+        self._read_overrides(now, errors)
 
         if not self.plan_enabled:
             self._set_state(None, now)
@@ -291,6 +346,14 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
                 PlanStatus.NO_ACTIVE_SLOT, now, active, soc, soc_source, errors
             )
 
+        if self._grid_available is False:
+            # The inverter runs from battery on its own during an outage, and
+            # nothing written now would take effect usefully. Keep the state
+            # machine memory and pick up again when the grid returns.
+            return self._snapshot(
+                PlanStatus.GRID_UNAVAILABLE, now, active, soc, soc_source, errors
+            )
+
         if soc is None:
             # Keep the state machine memory so a brief sensor dropout does not
             # reset hysteresis, but do not touch the inverter without data.
@@ -301,7 +364,7 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
 
         slot = active.slot
         force = self._force_evaluation or active.index != self._last_slot_index
-        desired = compute_state(
+        planned = compute_state(
             self._state,
             soc,
             slot.target_soc,
@@ -309,6 +372,7 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
             self.deadband,
             self.charge_hysteresis,
         )
+        desired = apply_hold_override(planned, bool(self._overrides))
 
         pending: PlanStatus | None = None
         if (
@@ -327,11 +391,96 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
         self._set_state(desired, now, active, soc)
 
         if self.hass.is_running:
-            await self._async_dispatch(desired, now, errors)
+            await self._async_dispatch(desired, active, now, errors)
         else:
             errors.append("Waiting for Home Assistant to finish starting")
 
-        return self._snapshot(desired, now, active, soc, soc_source, errors, pending)
+        # Label the hold as an override only while an override is what stops
+        # discharge; a hold kept by the dwell time after release is plain holding.
+        status = desired
+        if (
+            self._overrides
+            and desired is PlanStatus.HOLDING
+            and planned is PlanStatus.DISCHARGING
+        ):
+            status = PlanStatus.HOLDING_OVERRIDE
+        return self._snapshot(status, now, active, soc, soc_source, errors, pending)
+
+    def _read_overrides(self, now: datetime, errors: list[str]) -> None:
+        """Refresh grid availability and the list of active hold overrides."""
+        self._grid_available = self._read_grid_available(errors)
+        reasons: list[str] = []
+
+        for entity_id in self.conf.get(CONF_FORCE_HOLD_ENTITIES) or []:
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                errors.append(f"Force-hold entity {entity_id} is unavailable")
+            elif state.state == STATE_ON:
+                name = state.attributes.get(ATTR_FRIENDLY_NAME) or entity_id
+                reasons.append(f"{name} is on")
+
+        self._solar_forecast = None
+        forecast_entity: str | None = self.conf.get(CONF_SOLAR_FORECAST_ENTITY)
+        threshold = float(
+            self.conf.get(CONF_SOLAR_FORECAST_THRESHOLD, DEFAULT_SOLAR_FORECAST_THRESHOLD)
+        )
+        if forecast_entity:
+            self._solar_forecast = _state_to_float(self.hass.states.get(forecast_entity))
+            if self._solar_forecast is None:
+                errors.append(f"Solar forecast {forecast_entity} has no numeric value")
+            elif threshold > 0 and self._solar_forecast < threshold:
+                reasons.append(
+                    f"solar forecast {self._solar_forecast:g} below {threshold:g}"
+                )
+
+        self._battery_load = None
+        load_entity: str | None = self.conf.get(CONF_BATTERY_LOAD_ENTITY)
+        if load_entity:
+            self._battery_load = _state_to_float(self.hass.states.get(load_entity))
+            if self._battery_load is None:
+                errors.append(f"Battery load {load_entity} has no numeric value")
+            was_tripped = self._load_guard.tripped
+            if self._load_guard.update(self._battery_load, now):
+                reasons.append(
+                    f"battery load above {self._load_guard.trip_level:g} "
+                    f"(releases at {self._load_guard.release_level:g})"
+                )
+            if self._load_guard.tripped != was_tripped:
+                _LOGGER.info(
+                    "Battery load protection %s at %s",
+                    "tripped" if self._load_guard.tripped else "released",
+                    self._battery_load,
+                )
+
+        self._overrides = tuple(reasons)
+
+    def _read_grid_available(self, errors: list[str]) -> bool | None:
+        """Return True/False for grid availability, or None when unknown.
+
+        Accepts an on/off entity (on = grid present) or a numeric sensor such
+        as grid voltage, compared with the configured minimum voltage.
+        Unknown availability never blocks the plan.
+        """
+        entity_id: str | None = self.conf.get(CONF_GRID_AVAILABLE_ENTITY)
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            errors.append(f"Grid availability entity {entity_id} is unavailable")
+            return None
+        if state.state in (STATE_ON, STATE_OFF):
+            return state.state == STATE_ON
+        value = _state_to_float(state)
+        if value is None:
+            errors.append(f"Cannot interpret grid state '{state.state}' of {entity_id}")
+            return None
+        return value >= float(self.conf.get(CONF_GRID_MIN_VOLTAGE, DEFAULT_GRID_MIN_VOLTAGE))
+
+    def _charge_current(self, slot: PlanSlot | None) -> float:
+        """Grid charge current for a slot: its own value, else the global one."""
+        if slot is not None and slot.charge_current > 0:
+            return float(slot.charge_current)
+        return float(self.conf.get(CONF_GRID_CHARGE_CURRENT, DEFAULT_GRID_CHARGE_CURRENT))
 
     def _set_state(
         self,
@@ -401,13 +550,16 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
     ) -> PlannerData:
         desired_output: str | None = None
         desired_charger: str | None = None
-        if status in OPERATING_STATES:
+        if status is PlanStatus.HOLDING_OVERRIDE:
+            desired_output, desired_charger = self._mode_options(PlanStatus.HOLDING)
+        elif status in OPERATING_STATES:
             desired_output, desired_charger = self._mode_options(status)
         return PlannerData(
             status=status,
             active_slot=active.number if active else None,
             target_soc=active.slot.target_soc if active else None,
             grid_charge=active.slot.grid_charge if active else None,
+            charge_current=self._charge_current(active.slot) if active else None,
             slot_start=active.slot.start_time if active else None,
             slot_end=active.end_time if active else None,
             next_change=next_change_after(now, active.end_time) if active else None,
@@ -417,6 +569,11 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
             desired_charger=desired_charger,
             pending_state=pending,
             state_since=self._state_since,
+            overrides=self._overrides,
+            grid_available=self._grid_available,
+            solar_forecast=self._solar_forecast,
+            battery_load=self._battery_load,
+            battery_load_tripped=self._load_guard.tripped,
             last_command=self._last_command,
             last_command_time=self._last_command_time,
             errors=tuple(errors),
@@ -433,7 +590,11 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
             self._writes_today = 0
 
     async def _async_dispatch(
-        self, state: PlanStatus, now: datetime, errors: list[str]
+        self,
+        state: PlanStatus,
+        active: ActiveSlot,
+        now: datetime,
+        errors: list[str],
     ) -> None:
         """Bring the inverter entities in line with ``state``.
 
@@ -447,9 +608,7 @@ class AxpertPlannerCoordinator(DataUpdateCoordinator[PlannerData]):
 
         if state is PlanStatus.GRID_CHARGING:
             current_entity: str | None = self.conf.get(CONF_CHARGE_CURRENT_ENTITY)
-            amps = float(
-                self.conf.get(CONF_GRID_CHARGE_CURRENT, DEFAULT_GRID_CHARGE_CURRENT)
-            )
+            amps = self._charge_current(active.slot)
             if current_entity and amps > 0:
                 commands.append(_Command(current_entity, amps, numeric=True))
 

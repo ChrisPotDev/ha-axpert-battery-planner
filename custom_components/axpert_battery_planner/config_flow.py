@@ -5,6 +5,8 @@ Steps (identical in the config and options flows):
   2. Mode mapping: which option label of the inverter's select entities
      means SBU / USB / OSO / SNU (labels differ between integrations).
   3. Tuning: deadband, hysteresis, update interval and write protection.
+  4. Overrides: force-hold entities, solar forecast threshold, battery load
+     protection and grid availability. All optional.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from homeassistant.const import (
     PERCENTAGE,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
+    UnitOfEnergy,
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -42,28 +45,44 @@ from homeassistant.helpers.selector import (
 from .const import (
     CHARGER_GRID_CANDIDATES,
     CHARGER_NO_GRID_CANDIDATES,
+    CONF_BATTERY_LOAD_ENTITY,
+    CONF_BATTERY_LOAD_RELEASE,
+    CONF_BATTERY_LOAD_RELEASE_DELAY,
+    CONF_BATTERY_LOAD_TRIP,
+    CONF_BATTERY_LOAD_TRIP_DELAY,
     CONF_CHARGE_CURRENT_ENTITY,
     CONF_CHARGE_HYSTERESIS,
     CONF_CHARGER_GRID_OPTION,
     CONF_CHARGER_NO_GRID_OPTION,
     CONF_CHARGER_PRIORITY_ENTITY,
     CONF_DEADBAND,
+    CONF_FORCE_HOLD_ENTITIES,
+    CONF_GRID_AVAILABLE_ENTITY,
     CONF_GRID_CHARGE_CURRENT,
+    CONF_GRID_MIN_VOLTAGE,
     CONF_MAX_WRITES_PER_DAY,
     CONF_MIN_DWELL_TIME,
     CONF_OUTPUT_DISCHARGE_OPTION,
     CONF_OUTPUT_HOLD_OPTION,
     CONF_OUTPUT_PRIORITY_ENTITY,
     CONF_SOC_ENTITY,
+    CONF_SOLAR_FORECAST_ENTITY,
+    CONF_SOLAR_FORECAST_THRESHOLD,
     CONF_UPDATE_INTERVAL,
     CONF_VOLTAGE_EMPTY,
     CONF_VOLTAGE_ENTITY,
     CONF_VOLTAGE_FULL,
+    DEFAULT_BATTERY_LOAD_RELEASE,
+    DEFAULT_BATTERY_LOAD_RELEASE_DELAY,
+    DEFAULT_BATTERY_LOAD_TRIP,
+    DEFAULT_BATTERY_LOAD_TRIP_DELAY,
     DEFAULT_CHARGE_HYSTERESIS,
     DEFAULT_DEADBAND,
     DEFAULT_GRID_CHARGE_CURRENT,
+    DEFAULT_GRID_MIN_VOLTAGE,
     DEFAULT_MAX_WRITES_PER_DAY,
     DEFAULT_MIN_DWELL_TIME,
+    DEFAULT_SOLAR_FORECAST_THRESHOLD,
     DEFAULT_TITLE,
     DEFAULT_UPDATE_INTERVAL,
     DEFAULT_VOLTAGE_EMPTY,
@@ -72,6 +91,7 @@ from .const import (
     ENTITY_KEYS,
     OUTPUT_DISCHARGE_CANDIDATES,
     OUTPUT_HOLD_CANDIDATES,
+    OVERRIDE_ENTITY_KEYS,
 )
 from .planner import guess_option, normalize_option, resolve_option
 
@@ -89,7 +109,13 @@ MODE_FIELDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (CONF_CHARGER_GRID_OPTION, CONF_CHARGER_PRIORITY_ENTITY, CHARGER_GRID_CANDIDATES),
 )
 
-INT_SETTINGS = (CONF_UPDATE_INTERVAL, CONF_MIN_DWELL_TIME, CONF_MAX_WRITES_PER_DAY)
+INT_SETTINGS = (
+    CONF_UPDATE_INTERVAL,
+    CONF_MIN_DWELL_TIME,
+    CONF_MAX_WRITES_PER_DAY,
+    CONF_BATTERY_LOAD_TRIP_DELAY,
+    CONF_BATTERY_LOAD_RELEASE_DELAY,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -225,15 +251,13 @@ def _validate_modes(
 def _number(
     minimum: float, maximum: float, step: float, unit: str | None = None
 ) -> NumberSelector:
-    return NumberSelector(
-        NumberSelectorConfig(
-            min=minimum,
-            max=maximum,
-            step=step,
-            unit_of_measurement=unit,
-            mode=NumberSelectorMode.BOX,
-        )
+    config = NumberSelectorConfig(
+        min=minimum, max=maximum, step=step, mode=NumberSelectorMode.BOX
     )
+    # The selector rejects an explicit None unit, so only set it when present.
+    if unit is not None:
+        config["unit_of_measurement"] = unit
+    return NumberSelector(config)
 
 
 def _settings_schema(conf: Mapping[str, Any]) -> vol.Schema:
@@ -293,6 +317,102 @@ def _clean_settings(user_input: Mapping[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Step 4: overrides
+# ---------------------------------------------------------------------------
+OVERRIDE_NUMBER_DEFAULTS: dict[str, float] = {
+    CONF_SOLAR_FORECAST_THRESHOLD: DEFAULT_SOLAR_FORECAST_THRESHOLD,
+    CONF_BATTERY_LOAD_TRIP: DEFAULT_BATTERY_LOAD_TRIP,
+    CONF_BATTERY_LOAD_RELEASE: DEFAULT_BATTERY_LOAD_RELEASE,
+    CONF_BATTERY_LOAD_TRIP_DELAY: DEFAULT_BATTERY_LOAD_TRIP_DELAY,
+    CONF_BATTERY_LOAD_RELEASE_DELAY: DEFAULT_BATTERY_LOAD_RELEASE_DELAY,
+    CONF_GRID_MIN_VOLTAGE: DEFAULT_GRID_MIN_VOLTAGE,
+}
+
+
+def _overrides_schema(conf: Mapping[str, Any]) -> vol.Schema:
+    def default(key: str) -> float:
+        value = conf.get(key)
+        return OVERRIDE_NUMBER_DEFAULTS[key] if value is None else value
+
+    return vol.Schema(
+        {
+            vol.Optional(CONF_FORCE_HOLD_ENTITIES): EntitySelector(
+                EntitySelectorConfig(
+                    domain=["binary_sensor", "input_boolean", "switch"], multiple=True
+                )
+            ),
+            vol.Optional(CONF_SOLAR_FORECAST_ENTITY): EntitySelector(
+                EntitySelectorConfig(domain=["sensor", "input_number"])
+            ),
+            vol.Required(
+                CONF_SOLAR_FORECAST_THRESHOLD,
+                default=default(CONF_SOLAR_FORECAST_THRESHOLD),
+            ): _number(0, 1000, 0.1, UnitOfEnergy.KILO_WATT_HOUR),
+            vol.Optional(CONF_BATTERY_LOAD_ENTITY): EntitySelector(
+                EntitySelectorConfig(domain=["sensor", "input_number"])
+            ),
+            vol.Required(
+                CONF_BATTERY_LOAD_TRIP, default=default(CONF_BATTERY_LOAD_TRIP)
+            ): _number(0, 100000, 1),
+            vol.Required(
+                CONF_BATTERY_LOAD_RELEASE, default=default(CONF_BATTERY_LOAD_RELEASE)
+            ): _number(0, 100000, 1),
+            vol.Required(
+                CONF_BATTERY_LOAD_TRIP_DELAY,
+                default=default(CONF_BATTERY_LOAD_TRIP_DELAY),
+            ): _number(0, 3600, 5, UnitOfTime.SECONDS),
+            vol.Required(
+                CONF_BATTERY_LOAD_RELEASE_DELAY,
+                default=default(CONF_BATTERY_LOAD_RELEASE_DELAY),
+            ): _number(0, 7200, 30, UnitOfTime.SECONDS),
+            vol.Optional(CONF_GRID_AVAILABLE_ENTITY): EntitySelector(
+                EntitySelectorConfig(domain=["binary_sensor", "input_boolean", "sensor"])
+            ),
+            vol.Required(
+                CONF_GRID_MIN_VOLTAGE, default=default(CONF_GRID_MIN_VOLTAGE)
+            ): _number(0, 300, 1, UnitOfElectricPotential.VOLT),
+        }
+    )
+
+
+def _override_suggestions(conf: Mapping[str, Any]) -> dict[str, Any]:
+    suggestions: dict[str, Any] = {
+        key: conf[key] for key in OVERRIDE_ENTITY_KEYS if conf.get(key)
+    }
+    if conf.get(CONF_FORCE_HOLD_ENTITIES):
+        suggestions[CONF_FORCE_HOLD_ENTITIES] = list(conf[CONF_FORCE_HOLD_ENTITIES])
+    return suggestions
+
+
+def _validate_overrides(
+    hass: HomeAssistant, user_input: Mapping[str, Any]
+) -> dict[str, str]:
+    errors: dict[str, str] = {}
+    for key in OVERRIDE_ENTITY_KEYS:
+        entity_id = user_input.get(key)
+        if entity_id and hass.states.get(entity_id) is None:
+            errors[key] = "entity_not_found"
+    for entity_id in user_input.get(CONF_FORCE_HOLD_ENTITIES) or []:
+        if hass.states.get(entity_id) is None:
+            errors[CONF_FORCE_HOLD_ENTITIES] = "entity_not_found"
+    if float(user_input[CONF_BATTERY_LOAD_RELEASE]) >= float(
+        user_input[CONF_BATTERY_LOAD_TRIP]
+    ):
+        errors[CONF_BATTERY_LOAD_RELEASE] = "load_release_range"
+    return errors
+
+
+def _clean_overrides(user_input: Mapping[str, Any]) -> dict[str, Any]:
+    """Store every override key; cleared entities become None / [] explicitly."""
+    cleaned: dict[str, Any] = {key: user_input.get(key) or None for key in OVERRIDE_ENTITY_KEYS}
+    cleaned[CONF_FORCE_HOLD_ENTITIES] = list(user_input.get(CONF_FORCE_HOLD_ENTITIES) or [])
+    cleaned.update(
+        _clean_settings({key: user_input[key] for key in OVERRIDE_NUMBER_DEFAULTS})
+    )
+    return cleaned
+
+
+# ---------------------------------------------------------------------------
 # Flows
 # ---------------------------------------------------------------------------
 class AxpertBatteryPlannerConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -303,6 +423,7 @@ class AxpertBatteryPlannerConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialise the flow."""
         self._conf: dict[str, Any] = {}
+        self._options: dict[str, Any] = {}
 
     @staticmethod
     @callback
@@ -357,11 +478,8 @@ class AxpertBatteryPlannerConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             errors = _validate_settings(user_input)
             if not errors:
-                return self.async_create_entry(
-                    title=DEFAULT_TITLE,
-                    data=self._conf,
-                    options=_clean_settings(user_input),
-                )
+                self._options.update(_clean_settings(user_input))
+                return await self.async_step_overrides()
 
         return self.async_show_form(
             step_id="settings",
@@ -369,9 +487,30 @@ class AxpertBatteryPlannerConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_overrides(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Step 4: optional hold overrides and grid availability."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_overrides(self.hass, user_input)
+            if not errors:
+                self._options.update(_clean_overrides(user_input))
+                return self.async_create_entry(
+                    title=DEFAULT_TITLE, data=self._conf, options=self._options
+                )
+
+        return self.async_show_form(
+            step_id="overrides",
+            data_schema=self.add_suggested_values_to_schema(
+                _overrides_schema(user_input or {}), user_input or {}
+            ),
+            errors=errors,
+        )
+
 
 class AxpertBatteryPlannerOptionsFlow(OptionsFlow):
-    """Re-run all three steps; everything is saved as options."""
+    """Re-run all four steps; everything is saved as options."""
 
     def __init__(self) -> None:
         """Initialise the flow."""
@@ -427,10 +566,30 @@ class AxpertBatteryPlannerOptionsFlow(OptionsFlow):
             errors = _validate_settings(user_input)
             if not errors:
                 self._conf.update(_clean_settings(user_input))
-                return self.async_create_entry(data=self._conf)
+                return await self.async_step_overrides()
 
         return self.async_show_form(
             step_id="settings",
             data_schema=_settings_schema({**self._conf, **(user_input or {})}),
+            errors=errors,
+        )
+
+    async def async_step_overrides(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Step 4: overrides."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_overrides(self.hass, user_input)
+            if not errors:
+                self._conf.update(_clean_overrides(user_input))
+                return self.async_create_entry(data=self._conf)
+
+        return self.async_show_form(
+            step_id="overrides",
+            data_schema=self.add_suggested_values_to_schema(
+                _overrides_schema({**self._conf, **(user_input or {})}),
+                user_input if user_input is not None else _override_suggestions(self._conf),
+            ),
             errors=errors,
         )

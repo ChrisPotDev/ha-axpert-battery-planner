@@ -23,7 +23,8 @@ Requires Home Assistant 2024.11 or newer.
 |---|---|
 | 1. Inverter entities | Battery SOC sensor, optional battery voltage sensor, output source priority select, charger source priority select, optional max AC charge current number |
 | 2. Mode mapping | The exact option labels your integration uses for SBU/SOL (discharge), USB/SUB (hold), OSO (grid charging blocked) and SNU/UTI (grid charging). Pre-filled by auto-detection. |
-| 3. Tuning | Deadband, grid-charge overshoot, evaluation interval, minimum dwell time, daily write cap, grid charge current, voltage range for the fallback SOC estimate |
+| 3. Tuning | Deadband, grid-charge overshoot, evaluation interval, minimum dwell time, daily write cap, default grid charge current, voltage range for the fallback SOC estimate |
+| 4. Overrides (optional) | Force-hold entities, solar forecast sensor and threshold, battery load protection, grid availability entity. See [Overrides](#overrides). |
 
 You can change all of these later under *Configure*. The integration reloads when you save.
 
@@ -45,7 +46,30 @@ T = slot target SOC, D = deadband (default 2%), H = grid-charge overshoot (defau
 
 When grid charging finishes, the plan goes to **Holding**, not straight to discharging. That stops a charge/discharge loop through the grid. The master switch **Battery plan enabled** off means *bypass*: the integration stops sending commands and leaves the inverter as it is.
 
-Other statuses: **Plan disabled (bypass)**, **Waiting for SOC** (SOC sensor and voltage fallback both unavailable; nothing is sent), **No active slot** (all slots disabled).
+Other statuses: **Holding (override)** (see below), **Grid down (paused)**, **Plan disabled (bypass)**, **Waiting for SOC** (SOC sensor and voltage fallback both unavailable; nothing is sent), **No active slot** (all slots disabled).
+
+### Per-slot charge current
+Each slot has its own **charge current** (A). It is applied to the max AC charge current entity when that slot starts grid charging. 0 means use the default grid charge current from the Tuning step.
+
+## Overrides
+
+Overrides sit on top of the slot plan. All of them are optional.
+
+| Override | Configure | Effect |
+|---|---|---|
+| **Force-hold entities** | Any `binary_sensor`, `input_boolean` or `switch` entities | Hold while any of them is on. Use a template binary sensor for your own conditions, e.g. poor solar. |
+| **Solar forecast** | A numeric forecast sensor plus a threshold (kWh) | Hold while the forecast is below the threshold. Use an "energy production today" style sensor, not "remaining today", which drops below any threshold every evening. |
+| **Battery load protection** | A load sensor (% or W), trip and release levels, and how long each must be sustained | Hold once the load has stayed at or above the trip level for the trip delay. Release once it has stayed at or below the release level for the release delay. Short spikes are ignored. |
+| **Grid availability** | An on/off entity (on = grid present) or a grid voltage sensor plus a minimum voltage | While the grid is down, the plan pauses and sends nothing. The inverter runs from battery by itself. |
+
+How the hold overrides behave:
+- **They only stop discharge.** If the slot would discharge, the plan holds instead. Grid charging is never interrupted by a hold override.
+- **Starting a hold is immediate**, because it protects the battery. **Releasing one respects the minimum dwell time**, and discharge resumes only once SOC is above target + deadband.
+- **They're visible.** While an override is what stops discharge, the status is **Holding (override)** and the `overrides` attribute gives the reason, e.g. `battery load above 80 (releases at 60)`.
+
+A note on battery load protection: if your sensor measures *battery discharge*, it falls as soon as the load moves to the grid. The release delay then effectively sets how long the hold lasts. If it measures *inverter output load*, it follows your actual consumption.
+
+Unavailable override entities never block the plan. They're listed in the status sensor's `errors` attribute instead.
 
 ### Inverter (EEPROM) protection
 Axpert inverters store these settings in non-volatile memory, so writes are kept to a minimum:
@@ -66,11 +90,12 @@ Entity IDs below assume the default entry title *Axpert Battery Planner*.
 | Entity | Purpose |
 |---|---|
 | `switch.axpert_battery_planner_battery_plan_enabled` | Master switch (off = bypass) |
-| `sensor.axpert_battery_planner_plan_execution_status` | Current status; the attributes hold SOC, SOC source, desired modes, pending state, last command, errors and writes today |
-| `sensor.axpert_battery_planner_active_plan_slot` | Active slot number; the attributes hold the slot's start, end, next change, target and grid charge |
+| `sensor.axpert_battery_planner_plan_execution_status` | Current status; the attributes hold SOC, SOC source, desired modes, pending state, active overrides, grid availability, solar forecast, battery load, last command, errors and writes today |
+| `sensor.axpert_battery_planner_active_plan_slot` | Active slot number; the attributes hold the slot's start, end, next change, target, grid charge and effective charge current |
 | `sensor.axpert_battery_planner_plan_target_soc` | Target SOC of the active slot |
 | `time.axpert_battery_planner_slot_N_start_time` | Slot N start time |
 | `number.axpert_battery_planner_slot_N_target_soc` | Slot N target SOC (0–100%) |
+| `number.axpert_battery_planner_slot_N_charge_current` | Slot N grid charge current in A (0 = use default) |
 | `switch.axpert_battery_planner_slot_N_grid_charge` | Slot N grid charging allowed |
 | `switch.axpert_battery_planner_slot_N_enabled` | Slot N part of the schedule |
 
@@ -81,7 +106,7 @@ The plan is stored in `.storage/axpert_battery_planner.<entry_id>` and survives 
 Two ready-made layouts using only core cards:
 
 - [`dashboards/battery_plan_entities.yaml`](dashboards/battery_plan_entities.yaml): status tiles, an entities card with one section per slot, and a diagnostics card.
-- [`dashboards/battery_plan_grid.yaml`](dashboards/battery_plan_grid.yaml): a compact Sunsynk-style table, one row of four tiles per slot (Enabled · Start · SOC · Grid).
+- [`dashboards/battery_plan_grid.yaml`](dashboards/battery_plan_grid.yaml): a compact Sunsynk-style table, one row of five tiles per slot (Enabled · Start · SOC · Grid · Amps).
 
 Paste either into *Edit dashboard → Add card → Manual*.
 

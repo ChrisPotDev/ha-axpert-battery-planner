@@ -62,6 +62,31 @@ CONF_GRID_CHARGE_CURRENT: Final = "grid_charge_current"
 CONF_VOLTAGE_EMPTY: Final = "voltage_empty"
 CONF_VOLTAGE_FULL: Final = "voltage_full"
 
+# --- Config entry keys: overrides -------------------------------------------
+CONF_FORCE_HOLD_ENTITIES: Final = "force_hold_entities"
+CONF_SOLAR_FORECAST_ENTITY: Final = "solar_forecast_entity"
+CONF_SOLAR_FORECAST_THRESHOLD: Final = "solar_forecast_threshold"
+CONF_BATTERY_LOAD_ENTITY: Final = "battery_load_entity"
+CONF_BATTERY_LOAD_TRIP: Final = "battery_load_trip"
+CONF_BATTERY_LOAD_RELEASE: Final = "battery_load_release"
+CONF_BATTERY_LOAD_TRIP_DELAY: Final = "battery_load_trip_delay"
+CONF_BATTERY_LOAD_RELEASE_DELAY: Final = "battery_load_release_delay"
+CONF_GRID_AVAILABLE_ENTITY: Final = "grid_available_entity"
+CONF_GRID_MIN_VOLTAGE: Final = "grid_min_voltage"
+
+OVERRIDE_ENTITY_KEYS: Final = (
+    CONF_SOLAR_FORECAST_ENTITY,
+    CONF_BATTERY_LOAD_ENTITY,
+    CONF_GRID_AVAILABLE_ENTITY,
+)
+
+DEFAULT_SOLAR_FORECAST_THRESHOLD: Final = 0.0
+DEFAULT_BATTERY_LOAD_TRIP: Final = 80.0
+DEFAULT_BATTERY_LOAD_RELEASE: Final = 60.0
+DEFAULT_BATTERY_LOAD_TRIP_DELAY: Final = 60
+DEFAULT_BATTERY_LOAD_RELEASE_DELAY: Final = 600
+DEFAULT_GRID_MIN_VOLTAGE: Final = 180.0
+
 DEFAULT_DEADBAND: Final = 2.0
 DEFAULT_CHARGE_HYSTERESIS: Final = 2.0
 DEFAULT_UPDATE_INTERVAL: Final = 30
@@ -82,6 +107,8 @@ WRITE_CONFIRM_WARN_ATTEMPTS: Final = 3
 COMMAND_SPACING: Final = 2.0
 # Numeric (charge current) values within this tolerance count as equal.
 NUMERIC_TOLERANCE: Final = 0.5
+# Upper bound for the per-slot charge current entities (amps).
+MAX_SLOT_CHARGE_CURRENT: Final = 200
 
 # --- Default plan (hour, minute, target SOC, grid charge) --------------------
 DEFAULT_SLOTS: Final[tuple[tuple[int, int, int, bool], ...]] = (
@@ -152,5 +179,11 @@ ATTR_STATE_SINCE: Final = "state_since"
 ATTR_LAST_COMMAND: Final = "last_command"
 ATTR_LAST_COMMAND_TIME: Final = "last_command_time"
 ATTR_ERRORS: Final = "errors"
+ATTR_CHARGE_CURRENT: Final = "charge_current"
+ATTR_OVERRIDES: Final = "overrides"
+ATTR_GRID_AVAILABLE: Final = "grid_available"
+ATTR_SOLAR_FORECAST: Final = "solar_forecast"
+ATTR_BATTERY_LOAD: Final = "battery_load"
+ATTR_BATTERY_LOAD_TRIPPED: Final = "battery_load_tripped"
 ATTR_WRITES_TODAY: Final = "writes_today"
 ATTR_MAX_WRITES_PER_DAY: Final = "max_writes_per_day"

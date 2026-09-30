@@ -38,7 +38,7 @@
           "update_interval": "Evaluation interval",
           "min_dwell_time": "Minimum time between mode changes",
           "max_writes_per_day": "Maximum inverter writes per day",
-          "grid_charge_current": "Grid charge current",
+          "grid_charge_current": "Default grid charge current",
           "voltage_empty": "Voltage at 0% (fallback estimate)",
           "voltage_full": "Voltage at 100% (fallback estimate)"
         },
@@ -48,9 +48,37 @@
           "update_interval": "How often the plan is evaluated.",
           "min_dwell_time": "Rate limit for mode changes. Stopping discharge at the target, slot changes and your own edits are never delayed.",
           "max_writes_per_day": "Hard cap on inverter setting writes per day. Once reached, commands stop until midnight.",
-          "grid_charge_current": "0 leaves the current unchanged. Only used when a charge current entity is selected.",
+          "grid_charge_current": "Used for slots whose own charge current is 0. 0 here leaves the current unchanged. Only used when a charge current entity is selected.",
           "voltage_empty": "Only used when the SOC sensor is unavailable and a voltage sensor is selected.",
           "voltage_full": "Must be higher than the 0% voltage."
+        }
+      },
+      "overrides": {
+        "title": "Overrides (optional)",
+        "description": "Conditions that stop the battery discharging (it holds instead) or pause the plan. Grid charging is never stopped by a hold override. Leave entities empty to switch a feature off.",
+        "data": {
+          "force_hold_entities": "Force-hold entities",
+          "solar_forecast_entity": "Solar forecast sensor",
+          "solar_forecast_threshold": "Hold when forecast is below",
+          "battery_load_entity": "Battery load sensor",
+          "battery_load_trip": "Hold when load reaches",
+          "battery_load_release": "Release when load falls to",
+          "battery_load_trip_delay": "Load must stay high for",
+          "battery_load_release_delay": "Load must stay low for",
+          "grid_available_entity": "Grid availability entity",
+          "grid_min_voltage": "Minimum grid voltage"
+        },
+        "data_description": {
+          "force_hold_entities": "Hold while any of these is on, e.g. a template binary sensor for poor solar.",
+          "solar_forecast_entity": "Numeric forecast, e.g. Solcast or Forecast.Solar 'energy production today'. Avoid 'remaining today' sensors: they fall below any threshold every evening.",
+          "solar_forecast_threshold": "0 switches this check off.",
+          "battery_load_entity": "Battery load in % or W (any unit, the levels below use the same unit).",
+          "battery_load_trip": "Hold (move load to the grid) once the load stays at or above this level.",
+          "battery_load_release": "Must be lower than the trip level.",
+          "battery_load_trip_delay": "Ignores short spikes such as a kettle.",
+          "battery_load_release_delay": "If the sensor measures battery discharge, it drops as soon as the load moves to the grid, so this effectively sets how long the hold lasts.",
+          "grid_available_entity": "On/off entity (on = grid present) or a grid voltage sensor. While the grid is down the plan pauses and sends nothing.",
+          "grid_min_voltage": "Only used when the grid entity is a numeric sensor."
         }
       }
     },
@@ -60,7 +88,8 @@
       "same_entity": "Output and charger priority must be different entities.",
       "invalid_option": "This value is not one of the entity's options.",
       "same_option": "Both plan states would use the same option; choose a different one.",
-      "voltage_range": "The 100% voltage must be higher than the 0% voltage."
+      "voltage_range": "The 100% voltage must be higher than the 0% voltage.",
+      "load_release_range": "The release level must be lower than the trip level."
     },
     "abort": {
       "already_configured": "A battery plan for this SOC sensor already exists."
@@ -105,7 +134,7 @@
           "update_interval": "Evaluation interval",
           "min_dwell_time": "Minimum time between mode changes",
           "max_writes_per_day": "Maximum inverter writes per day",
-          "grid_charge_current": "Grid charge current",
+          "grid_charge_current": "Default grid charge current",
           "voltage_empty": "Voltage at 0% (fallback estimate)",
           "voltage_full": "Voltage at 100% (fallback estimate)"
         },
@@ -115,9 +144,37 @@
           "update_interval": "How often the plan is evaluated.",
           "min_dwell_time": "Rate limit for mode changes. Stopping discharge at the target, slot changes and your own edits are never delayed.",
           "max_writes_per_day": "Hard cap on inverter setting writes per day. Once reached, commands stop until midnight.",
-          "grid_charge_current": "0 leaves the current unchanged. Only used when a charge current entity is selected.",
+          "grid_charge_current": "Used for slots whose own charge current is 0. 0 here leaves the current unchanged. Only used when a charge current entity is selected.",
           "voltage_empty": "Only used when the SOC sensor is unavailable and a voltage sensor is selected.",
           "voltage_full": "Must be higher than the 0% voltage."
+        }
+      },
+      "overrides": {
+        "title": "Overrides (optional)",
+        "description": "Conditions that stop the battery discharging (it holds instead) or pause the plan. Grid charging is never stopped by a hold override. Leave entities empty to switch a feature off.",
+        "data": {
+          "force_hold_entities": "Force-hold entities",
+          "solar_forecast_entity": "Solar forecast sensor",
+          "solar_forecast_threshold": "Hold when forecast is below",
+          "battery_load_entity": "Battery load sensor",
+          "battery_load_trip": "Hold when load reaches",
+          "battery_load_release": "Release when load falls to",
+          "battery_load_trip_delay": "Load must stay high for",
+          "battery_load_release_delay": "Load must stay low for",
+          "grid_available_entity": "Grid availability entity",
+          "grid_min_voltage": "Minimum grid voltage"
+        },
+        "data_description": {
+          "force_hold_entities": "Hold while any of these is on, e.g. a template binary sensor for poor solar.",
+          "solar_forecast_entity": "Numeric forecast, e.g. Solcast or Forecast.Solar 'energy production today'. Avoid 'remaining today' sensors: they fall below any threshold every evening.",
+          "solar_forecast_threshold": "0 switches this check off.",
+          "battery_load_entity": "Battery load in % or W (any unit, the levels below use the same unit).",
+          "battery_load_trip": "Hold (move load to the grid) once the load stays at or above this level.",
+          "battery_load_release": "Must be lower than the trip level.",
+          "battery_load_trip_delay": "Ignores short spikes such as a kettle.",
+          "battery_load_release_delay": "If the sensor measures battery discharge, it drops as soon as the load moves to the grid, so this effectively sets how long the hold lasts.",
+          "grid_available_entity": "On/off entity (on = grid present) or a grid voltage sensor. While the grid is down the plan pauses and sends nothing.",
+          "grid_min_voltage": "Only used when the grid entity is a numeric sensor."
         }
       }
     },
@@ -127,13 +184,17 @@
       "same_entity": "Output and charger priority must be different entities.",
       "invalid_option": "This value is not one of the entity's options.",
       "same_option": "Both plan states would use the same option; choose a different one.",
-      "voltage_range": "The 100% voltage must be higher than the 0% voltage."
+      "voltage_range": "The 100% voltage must be higher than the 0% voltage.",
+      "load_release_range": "The release level must be lower than the trip level."
     }
   },
   "entity": {
     "number": {
       "slot_target_soc": {
         "name": "Slot {slot} target SOC"
+      },
+      "slot_charge_current": {
+        "name": "Slot {slot} charge current"
       }
     },
     "time": {
@@ -162,8 +223,10 @@
           "disabled": "Plan disabled (bypass)",
           "waiting_for_soc": "Waiting for SOC",
           "no_active_slot": "No active slot",
+          "grid_unavailable": "Grid down (paused)",
           "discharging": "Discharging to target",
           "holding": "Holding at target",
+          "holding_override": "Holding (override)",
           "grid_charging": "Grid charging to target"
         }
       },

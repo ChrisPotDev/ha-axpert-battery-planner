@@ -14,6 +14,11 @@ State machine (T = slot target SOC, D = deadband, H = charge hysteresis):
 With no previous state (startup, plan re-enabled) the plain comparisons from
 the specification are used: SOC > T discharges, SOC < T with grid charge on
 charges, anything else holds.
+
+Hold overrides (force-hold entities, poor solar forecast, high battery load)
+are applied on top: they turn DISCHARGING into HOLDING but never stop grid
+charging. The overridden state is what the state machine remembers, so once
+an override clears, discharging resumes only above T + D.
 """
 
 from __future__ import annotations
@@ -31,8 +36,10 @@ class PlanStatus(StrEnum):
     DISABLED = "disabled"
     WAITING_FOR_SOC = "waiting_for_soc"
     NO_ACTIVE_SLOT = "no_active_slot"
+    GRID_UNAVAILABLE = "grid_unavailable"
     DISCHARGING = "discharging"
     HOLDING = "holding"
+    HOLDING_OVERRIDE = "holding_override"
     GRID_CHARGING = "grid_charging"
 
 
@@ -49,6 +56,8 @@ class PlanSlot:
     target_soc: int
     grid_charge: bool
     active: bool
+    # Grid charge current in amps for this slot; 0 means use the global setting.
+    charge_current: int = 0
 
     def as_dict(self) -> dict[str, object]:
         """Serialise for storage."""
@@ -57,6 +66,7 @@ class PlanSlot:
             "target_soc": self.target_soc,
             "grid_charge": self.grid_charge,
             "active": self.active,
+            "charge_current": self.charge_current,
         }
 
     @classmethod
@@ -83,11 +93,17 @@ class PlanSlot:
         raw_active = data.get("active")
         active = raw_active if isinstance(raw_active, bool) else fallback.active
 
+        charge_current = fallback.charge_current
+        raw_current = data.get("charge_current")
+        if isinstance(raw_current, (int, float)) and not isinstance(raw_current, bool):
+            charge_current = max(0, int(round(raw_current)))
+
         return cls(
             start_time=start_time,
             target_soc=target_soc,
             grid_charge=grid_charge,
             active=active,
+            charge_current=charge_current,
         )
 
 
@@ -183,6 +199,67 @@ def compute_state(
 
     # No usable memory (startup, plan re-enabled, or a grid-charge slot just ended).
     return PlanStatus.DISCHARGING if soc > target_soc else PlanStatus.HOLDING
+
+
+def apply_hold_override(state: PlanStatus, override_active: bool) -> PlanStatus:
+    """Turn discharging into holding while a hold override is active.
+
+    Grid charging is left alone: an override preserves the battery, it does
+    not stop it being topped up.
+    """
+    if override_active and state is PlanStatus.DISCHARGING:
+        return PlanStatus.HOLDING
+    return state
+
+
+class LoadGuard:
+    """Trip/release detector for a battery load reading, with time filters.
+
+    Trips once the value has stayed at or above ``trip_level`` for
+    ``trip_delay`` seconds, and releases once it has stayed at or below
+    ``release_level`` for ``release_delay`` seconds. Short spikes (kettle,
+    geyser element) and short dips therefore do not change the plan.
+    A missing reading keeps the current state and restarts the timer.
+    """
+
+    def __init__(
+        self,
+        trip_level: float,
+        release_level: float,
+        trip_delay: float,
+        release_delay: float,
+    ) -> None:
+        """Initialise the guard."""
+        self.trip_level = trip_level
+        self.release_level = release_level
+        self.trip_delay = trip_delay
+        self.release_delay = release_delay
+        self.tripped = False
+        self._since: datetime | None = None
+
+    def update(self, value: float | None, now: datetime) -> bool:
+        """Feed a reading and return whether the guard is tripped."""
+        if value is None:
+            self._since = None
+            return self.tripped
+
+        if self.tripped:
+            crossing = value <= self.release_level
+            delay = self.release_delay
+        else:
+            crossing = value >= self.trip_level
+            delay = self.trip_delay
+
+        if not crossing:
+            self._since = None
+            return self.tripped
+
+        if self._since is None:
+            self._since = now
+        if (now - self._since).total_seconds() >= delay:
+            self.tripped = not self.tripped
+            self._since = None
+        return self.tripped
 
 
 def bypasses_dwell(previous: PlanStatus | None, desired: PlanStatus) -> bool:

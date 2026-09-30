@@ -3,6 +3,9 @@
     "number": {
       "slot_target_soc": {
         "default": "mdi:battery-heart-variant"
+      },
+      "slot_charge_current": {
+        "default": "mdi:current-ac"
       }
     },
     "time": {
@@ -40,8 +43,10 @@
           "disabled": "mdi:battery-off",
           "waiting_for_soc": "mdi:battery-unknown",
           "no_active_slot": "mdi:battery-alert",
+          "grid_unavailable": "mdi:transmission-tower-off",
           "discharging": "mdi:battery-arrow-down",
           "holding": "mdi:battery-lock",
+          "holding_override": "mdi:battery-lock-open",
           "grid_charging": "mdi:battery-charging-high"
         }
       },

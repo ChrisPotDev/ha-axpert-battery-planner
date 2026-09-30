@@ -1,5 +1,5 @@
 # Axpert Battery Planner - compact Sunsynk-style table using core tile cards.
-# One row per slot: Enabled | Start time | Target SOC | Grid charge.
+# One row per slot: Enabled | Start time | Target SOC | Grid charge | Charge amps.
 # Tapping a time or SOC tile opens its editor; tapping a switch toggles it.
 type: vertical-stack
 cards:
@@ -24,11 +24,11 @@ cards:
   - type: markdown
     content: >-
       {% set nxt = state_attr('sensor.axpert_battery_planner_active_plan_slot', 'next_slot_change') %}
-      **Slot · Start · Target SOC · Grid charge** — active slot
+      **Slot · Start · Target SOC · Grid · Amps** — active slot
       **{{ states('sensor.axpert_battery_planner_active_plan_slot') }}**,
       next change at {{ as_timestamp(nxt) | timestamp_custom('%H:%M') if nxt else 'n/a' }}
   - type: grid
-    columns: 4
+    columns: 5
     square: false
     cards:
       # Slot 1
@@ -48,6 +48,9 @@ cards:
         name: Grid
         tap_action:
           action: toggle
+      - type: tile
+        entity: number.axpert_battery_planner_slot_1_charge_current
+        name: Amps
       # Slot 2
       - type: tile
         entity: switch.axpert_battery_planner_slot_2_enabled
@@ -65,6 +68,9 @@ cards:
         name: Grid
         tap_action:
           action: toggle
+      - type: tile
+        entity: number.axpert_battery_planner_slot_2_charge_current
+        name: Amps
       # Slot 3
       - type: tile
         entity: switch.axpert_battery_planner_slot_3_enabled
@@ -82,6 +88,9 @@ cards:
         name: Grid
         tap_action:
           action: toggle
+      - type: tile
+        entity: number.axpert_battery_planner_slot_3_charge_current
+        name: Amps
       # Slot 4
       - type: tile
         entity: switch.axpert_battery_planner_slot_4_enabled
@@ -99,6 +108,9 @@ cards:
         name: Grid
         tap_action:
           action: toggle
+      - type: tile
+        entity: number.axpert_battery_planner_slot_4_charge_current
+        name: Amps
       # Slot 5
       - type: tile
         entity: switch.axpert_battery_planner_slot_5_enabled
@@ -116,6 +128,9 @@ cards:
         name: Grid
         tap_action:
           action: toggle
+      - type: tile
+        entity: number.axpert_battery_planner_slot_5_charge_current
+        name: Amps
       # Slot 6
       - type: tile
         entity: switch.axpert_battery_planner_slot_6_enabled
@@ -133,3 +148,6 @@ cards:
         name: Grid
         tap_action:
           action: toggle
+      - type: tile
+        entity: number.axpert_battery_planner_slot_6_charge_current
+        name: Amps
