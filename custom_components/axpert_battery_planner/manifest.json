@@ -1,0 +1,13 @@
+{
+  "domain": "axpert_battery_planner",
+  "name": "Axpert Battery Planner",
+  "codeowners": ["@ChrisPotDev"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/ChrisPotDev/ha-axpert-battery-planner",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/ChrisPotDev/ha-axpert-battery-planner/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

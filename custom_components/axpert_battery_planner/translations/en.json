@@ -1,0 +1,175 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Inverter entities",
+        "description": "Select the entities from your existing Axpert / Voltronic integration that the battery plan will read and control.",
+        "data": {
+          "soc_entity": "Battery SOC sensor",
+          "voltage_entity": "Battery voltage sensor (fallback)",
+          "output_priority_entity": "Output source priority",
+          "charger_priority_entity": "Charger source priority",
+          "charge_current_entity": "Maximum AC (utility) charge current"
+        },
+        "data_description": {
+          "soc_entity": "Battery state of charge in percent.",
+          "voltage_entity": "Optional. Used to estimate SOC only while the SOC sensor is unavailable.",
+          "output_priority_entity": "Select entity for the output source priority (SBU / SOL / USB / SUB).",
+          "charger_priority_entity": "Select entity for the charger source priority (OSO / CSO / SNU / UTI).",
+          "charge_current_entity": "Optional. Set to the configured grid charge current when grid charging starts."
+        }
+      },
+      "modes": {
+        "title": "Mode mapping",
+        "description": "Choose the exact option labels your inverter integration uses.\n\n**{output_entity}** offers: {output_options}\n\n**{charger_entity}** offers: {charger_options}\n\nUse OSO (solar only) rather than CSO to block grid charging: CSO still charges from the grid when there is no solar.",
+        "data": {
+          "output_discharge_option": "Output priority when discharging (SBU or SOL)",
+          "output_hold_option": "Output priority when holding / grid charging (USB or SUB)",
+          "charger_no_grid_option": "Charger priority with grid charging blocked (OSO)",
+          "charger_grid_option": "Charger priority when grid charging (SNU or UTI)"
+        }
+      },
+      "settings": {
+        "title": "Tuning and inverter protection",
+        "description": "These settings limit how often inverter settings are written, which protects the inverter's EEPROM.",
+        "data": {
+          "deadband": "SOC deadband",
+          "charge_hysteresis": "Grid charge overshoot",
+          "update_interval": "Evaluation interval",
+          "min_dwell_time": "Minimum time between mode changes",
+          "max_writes_per_day": "Maximum inverter writes per day",
+          "grid_charge_current": "Grid charge current",
+          "voltage_empty": "Voltage at 0% (fallback estimate)",
+          "voltage_full": "Voltage at 100% (fallback estimate)"
+        },
+        "data_description": {
+          "deadband": "SOC must rise this far above target before discharging resumes, or fall this far below target before grid charging restarts.",
+          "charge_hysteresis": "Grid charging continues until SOC reaches target plus this amount (capped at 100%).",
+          "update_interval": "How often the plan is evaluated.",
+          "min_dwell_time": "Rate limit for mode changes. Stopping discharge at the target, slot changes and your own edits are never delayed.",
+          "max_writes_per_day": "Hard cap on inverter setting writes per day. Once reached, commands stop until midnight.",
+          "grid_charge_current": "0 leaves the current unchanged. Only used when a charge current entity is selected.",
+          "voltage_empty": "Only used when the SOC sensor is unavailable and a voltage sensor is selected.",
+          "voltage_full": "Must be higher than the 0% voltage."
+        }
+      }
+    },
+    "error": {
+      "entity_required": "This entity is required.",
+      "entity_not_found": "Entity not found. Make sure your Axpert integration is loaded.",
+      "same_entity": "Output and charger priority must be different entities.",
+      "invalid_option": "This value is not one of the entity's options.",
+      "same_option": "Both plan states would use the same option; choose a different one.",
+      "voltage_range": "The 100% voltage must be higher than the 0% voltage."
+    },
+    "abort": {
+      "already_configured": "A battery plan for this SOC sensor already exists."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Inverter entities",
+        "description": "Select the entities from your existing Axpert / Voltronic integration that the battery plan will read and control.",
+        "data": {
+          "soc_entity": "Battery SOC sensor",
+          "voltage_entity": "Battery voltage sensor (fallback)",
+          "output_priority_entity": "Output source priority",
+          "charger_priority_entity": "Charger source priority",
+          "charge_current_entity": "Maximum AC (utility) charge current"
+        },
+        "data_description": {
+          "soc_entity": "Battery state of charge in percent.",
+          "voltage_entity": "Optional. Used to estimate SOC only while the SOC sensor is unavailable.",
+          "output_priority_entity": "Select entity for the output source priority (SBU / SOL / USB / SUB).",
+          "charger_priority_entity": "Select entity for the charger source priority (OSO / CSO / SNU / UTI).",
+          "charge_current_entity": "Optional. Set to the configured grid charge current when grid charging starts."
+        }
+      },
+      "modes": {
+        "title": "Mode mapping",
+        "description": "Choose the exact option labels your inverter integration uses.\n\n**{output_entity}** offers: {output_options}\n\n**{charger_entity}** offers: {charger_options}\n\nUse OSO (solar only) rather than CSO to block grid charging: CSO still charges from the grid when there is no solar.",
+        "data": {
+          "output_discharge_option": "Output priority when discharging (SBU or SOL)",
+          "output_hold_option": "Output priority when holding / grid charging (USB or SUB)",
+          "charger_no_grid_option": "Charger priority with grid charging blocked (OSO)",
+          "charger_grid_option": "Charger priority when grid charging (SNU or UTI)"
+        }
+      },
+      "settings": {
+        "title": "Tuning and inverter protection",
+        "description": "These settings limit how often inverter settings are written, which protects the inverter's EEPROM.",
+        "data": {
+          "deadband": "SOC deadband",
+          "charge_hysteresis": "Grid charge overshoot",
+          "update_interval": "Evaluation interval",
+          "min_dwell_time": "Minimum time between mode changes",
+          "max_writes_per_day": "Maximum inverter writes per day",
+          "grid_charge_current": "Grid charge current",
+          "voltage_empty": "Voltage at 0% (fallback estimate)",
+          "voltage_full": "Voltage at 100% (fallback estimate)"
+        },
+        "data_description": {
+          "deadband": "SOC must rise this far above target before discharging resumes, or fall this far below target before grid charging restarts.",
+          "charge_hysteresis": "Grid charging continues until SOC reaches target plus this amount (capped at 100%).",
+          "update_interval": "How often the plan is evaluated.",
+          "min_dwell_time": "Rate limit for mode changes. Stopping discharge at the target, slot changes and your own edits are never delayed.",
+          "max_writes_per_day": "Hard cap on inverter setting writes per day. Once reached, commands stop until midnight.",
+          "grid_charge_current": "0 leaves the current unchanged. Only used when a charge current entity is selected.",
+          "voltage_empty": "Only used when the SOC sensor is unavailable and a voltage sensor is selected.",
+          "voltage_full": "Must be higher than the 0% voltage."
+        }
+      }
+    },
+    "error": {
+      "entity_required": "This entity is required.",
+      "entity_not_found": "Entity not found. Make sure your Axpert integration is loaded.",
+      "same_entity": "Output and charger priority must be different entities.",
+      "invalid_option": "This value is not one of the entity's options.",
+      "same_option": "Both plan states would use the same option; choose a different one.",
+      "voltage_range": "The 100% voltage must be higher than the 0% voltage."
+    }
+  },
+  "entity": {
+    "number": {
+      "slot_target_soc": {
+        "name": "Slot {slot} target SOC"
+      }
+    },
+    "time": {
+      "slot_start_time": {
+        "name": "Slot {slot} start time"
+      }
+    },
+    "switch": {
+      "plan_enabled": {
+        "name": "Battery plan enabled"
+      },
+      "slot_active": {
+        "name": "Slot {slot} enabled"
+      },
+      "slot_grid_charge": {
+        "name": "Slot {slot} grid charge"
+      }
+    },
+    "sensor": {
+      "active_slot": {
+        "name": "Active plan slot"
+      },
+      "plan_status": {
+        "name": "Plan execution status",
+        "state": {
+          "disabled": "Plan disabled (bypass)",
+          "waiting_for_soc": "Waiting for SOC",
+          "no_active_slot": "No active slot",
+          "discharging": "Discharging to target",
+          "holding": "Holding at target",
+          "grid_charging": "Grid charging to target"
+        }
+      },
+      "target_soc": {
+        "name": "Plan target SOC"
+      }
+    }
+  }
+}

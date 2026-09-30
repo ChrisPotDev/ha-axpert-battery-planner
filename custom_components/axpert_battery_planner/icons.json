@@ -1,0 +1,53 @@
+{
+  "entity": {
+    "number": {
+      "slot_target_soc": {
+        "default": "mdi:battery-heart-variant"
+      }
+    },
+    "time": {
+      "slot_start_time": {
+        "default": "mdi:clock-start"
+      }
+    },
+    "switch": {
+      "plan_enabled": {
+        "default": "mdi:calendar-clock",
+        "state": {
+          "off": "mdi:calendar-remove"
+        }
+      },
+      "slot_active": {
+        "default": "mdi:calendar-check",
+        "state": {
+          "off": "mdi:calendar-blank"
+        }
+      },
+      "slot_grid_charge": {
+        "default": "mdi:transmission-tower-import",
+        "state": {
+          "off": "mdi:transmission-tower-off"
+        }
+      }
+    },
+    "sensor": {
+      "active_slot": {
+        "default": "mdi:timeline-clock"
+      },
+      "plan_status": {
+        "default": "mdi:battery-sync",
+        "state": {
+          "disabled": "mdi:battery-off",
+          "waiting_for_soc": "mdi:battery-unknown",
+          "no_active_slot": "mdi:battery-alert",
+          "discharging": "mdi:battery-arrow-down",
+          "holding": "mdi:battery-lock",
+          "grid_charging": "mdi:battery-charging-high"
+        }
+      },
+      "target_soc": {
+        "default": "mdi:battery-heart-variant"
+      }
+    }
+  }
+}
